@@ -1,5 +1,5 @@
 from langchain_openai import ChatOpenAI
-from langchain.chains import RetrievalQA
+from langchain_core.prompts import ChatPromptTemplate
 
 from app.services.retriever import retriever
 
@@ -13,7 +13,7 @@ STRICT RULES:
 2. NEVER use external knowledge.
 
 3. If information is not found in documents, say:
-   "This information is not available in the provided documents."
+"This information is not available in the provided documents."
 
 4. Always provide citations.
 """
@@ -23,24 +23,38 @@ llm = ChatOpenAI(
     temperature=0
 )
 
-qa_chain = RetrievalQA.from_chain_type(
-    llm=llm,
-    retriever=retriever,
-    return_source_documents=True
-)
-
 
 def ask_question(question):
 
-    result = qa_chain.invoke({
-        "query": question
-    })
+    docs = retriever.invoke(question)
 
-    answer = result["result"]
+    context = "\n\n".join(
+        [doc.page_content for doc in docs]
+    )
+
+    prompt = ChatPromptTemplate.from_template(
+        """
+        {system_prompt}
+
+        Context:
+        {context}
+
+        Question:
+        {question}
+        """
+    )
+
+    chain = prompt | llm
+
+    result = chain.invoke({
+        "system_prompt": SYSTEM_PROMPT,
+        "context": context,
+        "question": question
+    })
 
     sources = []
 
-    for doc in result["source_documents"]:
+    for doc in docs:
 
         sources.append({
             "document": doc.metadata.get("source"),
@@ -49,6 +63,6 @@ def ask_question(question):
         })
 
     return {
-        "answer": answer,
+        "answer": result.content,
         "sources": sources
     }
